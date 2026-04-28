@@ -1,26 +1,33 @@
-const { getStore } = require('@netlify/blobs');
-
 exports.handler = async function (event) {
   if (event.httpMethod !== 'POST') {
     return { statusCode: 405, body: 'Method Not Allowed' };
   }
 
   try {
-    const body = JSON.parse(event.body);
+    const body   = JSON.parse(event.body);
+    const repo   = process.env.GITHUB_REPO;
+    const file   = process.env.GITHUB_FILE;
+    const token  = process.env.GITHUB_TOKEN;
+    const apiURL = `https://api.github.com/repos/${repo}/contents/${file}`;
 
-    // Load all KB docs from Blobs and append to system prompt
-    const store = getStore('knowledge-base');
-    const { blobs } = await store.list();
+    // Load KB from GitHub
     let kbContext = '';
-    if (blobs.length > 0) {
-      const docs = await Promise.all(
-        blobs.map(async (b) => {
-          const content = await store.get(b.key);
-          return `--- [${b.key}] ---\n${(content || '').slice(0, 8000)}`;
-        })
-      );
-      kbContext = '\n\n=== BASE DE CONOCIMIENTO ===\n' + docs.join('\n\n') + '\n=== FIN ===';
-    }
+    try {
+      const res = await fetch(apiURL, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Accept': 'application/vnd.github+json'
+        }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const docs = JSON.parse(Buffer.from(data.content, 'base64').toString('utf8'));
+        if (docs.length > 0) {
+          const chunks = docs.map(d => `--- [${d.name}] ---\n${(d.content || '').slice(0, 8000)}`);
+          kbContext = '\n\n=== BASE DE CONOCIMIENTO ===\n' + chunks.join('\n\n') + '\n=== FIN ===';
+        }
+      }
+    } catch(e) { /* KB not available, continue without it */ }
 
     const systemPrompt = (body.system || '') + kbContext;
 
