@@ -1,11 +1,15 @@
 const { getStore } = require('@netlify/blobs');
 
 exports.handler = async function (event) {
-  const store = getStore('knowledge-base');
+  const store = getStore({
+    name: 'knowledge-base',
+    siteID: process.env.NETLIFY_SITE_ID,
+    token: process.env.NETLIFY_TOKEN
+  });
+
   const method = event.httpMethod;
 
   try {
-    // GET — load all documents
     if (method === 'GET') {
       const { blobs } = await store.list();
       const docs = await Promise.all(
@@ -21,14 +25,12 @@ exports.handler = async function (event) {
       };
     }
 
-    // POST — save a document
     if (method === 'POST') {
       const { name, content } = JSON.parse(event.body);
       await store.set(name, content);
       return { statusCode: 200, body: JSON.stringify({ ok: true }) };
     }
 
-    // DELETE — remove a document
     if (method === 'DELETE') {
       const { name } = JSON.parse(event.body);
       await store.delete(name);
